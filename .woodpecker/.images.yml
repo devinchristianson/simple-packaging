@@ -1,0 +1,23 @@
+pipeline:
+  build:
+    when:
+      branch: main
+      event: push
+      path: "docker/*"
+    image: docker
+    commands:
+      - echo $${ docker_passwd } | docker login --username $${ docker_username } --password-stdin 
+      - docker build tools/docker/${DISTRO} -t devinchristianson/fpm:${DISTRO}-${VERSION} --build-args VERSION=${VERSION}
+      - docker push devinchristianson/fpm:${DISTRO}-${VERSION}
+    secrets: [ docker_username, docker_password ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+matrix:
+  include:
+    - DISTRO: fedora
+      VERSION: 37
+    - DISTRO: ubuntu
+      VERSION: 20.04
+    - DISTRO: archlinux
+      VERSION: latest
