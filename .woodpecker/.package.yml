@@ -1,0 +1,18 @@
+pipeline:
+  build:
+    when:
+      branch: main
+      event: push
+      path: "packages/*"
+    image: devinchristianson/fpm:ubuntu-20.04
+    commands:
+      - cd ${NAME}
+      - fpm -t ${TYPE} -p /tmp/
+      - sleep 10
+matrix:
+  TYPE: 
+    - deb
+    - pacman
+    - rpm
+  NAME:
+    - hello
