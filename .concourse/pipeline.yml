@@ -17,5 +17,5 @@ jobs:
             values: ["hello"]
           - var: pkg-type
             values: ["pacman", "rpm", "deb"]
-          set_pipeline: build-pkg-((pkg-name))
-          file: simple-packaging/packages/((pkg-name))/pipeline.yml
+          set_pipeline: build-pkg-((.:pkg-name))
+          file: simple-packaging/packages/((.:pkg-name))/pipeline.yml

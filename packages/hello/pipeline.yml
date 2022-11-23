@@ -1,4 +1,5 @@
+jobs:
 - name: hello-world
   plan:
-    - task: build package
-      file: simple-packaging/packages/hello/pipeline.yml
+  - task: build-package
+    file: simple-packaging/packages/hello/pipeline.yml
