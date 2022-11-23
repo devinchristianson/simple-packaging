@@ -11,7 +11,7 @@ outputs:
     path: output
 run:
     path: fpm
-    args: ["-t", "((.:pkg-type))", "-s", "dir","--name", "hello-world",
+    args: ["-t", "((pkg-type))", "-s", "dir","--name", "hello-world",
       "--version", "0.1.0","--architecture", "all","--depends", "bash",
       "--description", "'Says hi!'","pkg/hello=/usr/bin/hello-world", "../../../output/"]
     dir: source/package/hello
