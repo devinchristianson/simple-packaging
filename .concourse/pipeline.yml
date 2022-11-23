@@ -13,9 +13,9 @@ jobs:
         trigger: true
       - in_parallel:
         - across:
-          - var: pkg-name
-            values: ["hello"]
           - var: pkg-type
             values: ["pacman", "rpm", "deb"]
-          set_pipeline: build-pkg-((.:pkg-name))
-          file: simple-packaging/packages/((.:pkg-name))/pipeline.yml
+          task: build-((.:pkg-type))-hello
+          input_mapping: 
+            source: simple-packaging/packages/hello
+          file: simple-packaging/packages/hello/task.yml

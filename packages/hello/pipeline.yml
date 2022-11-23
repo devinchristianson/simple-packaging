@@ -1,5 +1,10 @@
 jobs:
 - name: hello-world
   plan:
-  - task: build-package
-    file: simple-packaging/packages/hello/pipeline.yml
+  - in_parallel:
+    - across:
+      - var: pkg-type
+        values: ["pacman", "rpm", "deb"]
+      task: build-((.:pkg-type))-((.:pkg-type))
+      file: simple-packaging/packages/hello/pipeline.yml
+  - 
