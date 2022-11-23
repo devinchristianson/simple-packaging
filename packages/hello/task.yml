@@ -1,3 +1,5 @@
+meta:
+  name: hello
 ---
 platform: linux
 image_resource:
@@ -11,7 +13,7 @@ outputs:
     path: output
 run:
     path: fpm
-    args: ["-t", "((.:pkg-type))", "-s", "dir","--name", "hello-world0",
+    args: ["-t", "((.:pkg-type))", "-s", "dir","--name", "((grab meta.name))",
       "--version", "0.1.0","--architecture", "all","--depends", "bash",
-      "--description", "'Says hi!'","pkg/hello=/usr/bin/hello-world", "../output/"]
-    dir: source
+      "--description", "'Says hi!'","pkg/hello=/usr/bin/hello-world", "../../../output/"]
+    dir: source/package/((grab meta.name))
