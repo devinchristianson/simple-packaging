@@ -1,0 +1,21 @@
+---
+resources:
+  - name: simple-packaging
+    type: git
+    source:
+      uri: https://github.com/devinchristianson/simple-packaging.git
+      branch: main
+
+jobs:
+  - name: build-packages
+    plan:
+      - get: simple-packaging
+        trigger: true
+      - in_parallel:
+        - across:
+          - var: pkg-name
+            values: ["hello"]
+          - var: pkg-type
+            values: ["pacman", "rpm", "deb"]
+          set_pipeline: build-pkg-((pkg-name))
+          file: simple-packaging/packages/((pkg-name))/pipeline.yml

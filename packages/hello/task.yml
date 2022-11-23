@@ -1,0 +1,17 @@
+---
+platform: linux
+image_resource:
+  name: 
+  type: docker-image
+  source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+inputs:
+- name: hello
+outputs: 
+  - name: output
+    path: output
+run:
+    path: fpm
+    args: ["-t", "((pkg-type))", "-s", "dir","--name", "hello-world0",
+      "--version", "0.1.0","--architecture", "all","--depends", "bash",
+      "--description", "'Says hi!'","pkg/hello=/usr/bin/hello-world", "../output/"]
+    dir: hello
