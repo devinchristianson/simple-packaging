@@ -5,7 +5,7 @@ image_resource:
   type: docker-image
   source: {repository: devinchristianson/fpm, tag: archlinux-latest}
 inputs:
-- name: source
+- name: simple-packaging
 outputs: 
   - name: output
     path: output
@@ -14,4 +14,4 @@ run:
     args: ["-t", "((pkg-type))", "-s", "dir","--name", "hello-world",
       "--version", "0.1.0","--architecture", "all","--depends", "bash",
       "--description", "'Says hi!'","pkg/hello=/usr/bin/hello-world", "../../../output/"]
-    dir: source/package/hello
+    dir: simple-packaging/package/hello
