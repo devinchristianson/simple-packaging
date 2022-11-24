@@ -12,4 +12,7 @@ RUN echo "===> Installing tools..." \
 
 WORKDIR /src/
 
-ENTRYPOINT ["fpm"]
+COPY ./gpg-init.sh /gpg-init.sh
+
+ENTRYPOINT ["/gpg-init.sh"]
+CMD ["fpm"]

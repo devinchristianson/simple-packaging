@@ -1,4 +1,10 @@
 ---
+resource_types:
+- name: s3-bucket
+  type: docker-image
+  source:
+    repository: troykinsella/s3-resource-simple
+
 resources:
   - name: simple-packaging
     type: git
@@ -6,16 +12,102 @@ resources:
       uri: https://github.com/devinchristianson/simple-packaging.git
       branch: main
 
+  - name: pacman-pkg-hello
+    type: s3
+    source:
+      regexp: pacman/hello-world-(.*)-any.pkg.tar.zst
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      access_key_id: ((s3-mdics-repo.access-key))
+      secret_access_key: ((s3-mdics-repo.secret-key))
+  - name: pacman-pkg-hello-sig
+    type: s3
+    source:
+      regexp: pacman/hello-world-(.*)-any.pkg.tar.zst
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      access_key_id: ((s3-mdics-repo.access-key))
+      secret_access_key: ((s3-mdics-repo.secret-key))
+  - name: pacman-index
+    type: s3-bucket
+    source:
+      access_key_id: ((s3-mdics-repo.access-key)) # Optional
+      secret_access_key: ((s3-mdics-repo.secret-key)) # Optional
+      bucket: pkg.mdics.me
+      aws_options: ["--endpoint-url https://s3.us-east-2.wasabisys.com"]
+      options:
+        - "--follow-symlinks"
 jobs:
   - name: build-packages
     plan:
       - get: simple-packaging
         trigger: true
-      - in_parallel:
-        - across:
-          - var: pkg-type
-            values: ["pacman", "rpm", "deb"]
-          task: build-((.:pkg-type))-hello
-          input_mapping: 
-            source: simple-packaging/packages/hello
-          file: simple-packaging/packages/hello/task.yml
+      - task: build-pacman-hello
+        config:
+          platform: linux
+          image_resource:
+            name: 
+            type: docker-image
+            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+          inputs:
+          - name: simple-packaging
+          outputs: 
+          - name: output
+          run:
+            path: fpm
+            args: ["-t", "pacman", "-s", "dir","--name", "hello-world",
+              "--version", "0.1.0","--architecture", "all","--depends", "bash",
+              "--description", "'Says hi!'", "-p", "../../../output/",
+              "pkg/hello=/usr/bin/hello-world"]
+            dir: simple-packaging/packages/hello
+      - task: sign-pacman-hello
+        config:
+          platform: linux
+          image_resource:
+            name: 
+            type: docker-image
+            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+          inputs:
+          - name: output
+          outputs: 
+          - name: output
+          run:
+            path: /gpg-init.sh
+            args: ["gpg", "--use-agent",
+              "--output", "hello-world-0.1.0-1-any.pkg.tar.zst.sig",
+              "--detach-sig", "hello-world-0.1.0-1-any.pkg.tar.zst"]
+            dir: output
+          params:
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+            GPG_KEY_ID: ((gpg.key-id))
+      - put: pacman-pkg-hello
+        params:
+          file: output/hello-world-*-any.pkg.tar.zst
+      - put: pacman-pkg-hello-sig
+        params:
+          file: output/hello-world-*-any.pkg.tar.zst.sig
+      - task: rebuild-index-for-pacman-hello
+        config:
+          platform: linux
+          image_resource:
+            name: 
+            type: docker-image
+            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+          inputs:
+          - name: output
+          outputs: 
+          - name: repo
+          run:
+            path: /gpg-init.sh
+            args: ["repo-add", "--verify", "--sign", "-n",
+              "mdicsme.db.tar.gz", "../output/hello-world-0.1.0-1-any.pkg.tar.zst"]
+            dir: repo
+          params:
+              GPG_PRIVATE_KEY: ((gpg.private-key))
+              GPG_KEY_ID: ((gpg.key-id))
+      - put: pacman-index
+        params:
+          prefix: pacman
+          source_dir: repo 
+          
+        

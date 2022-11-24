@@ -1,0 +1,8 @@
+services:
+  archlinux:
+    build:
+      context: .
+      dockerfile: archlinux/Dockerfile
+    volumes:
+      - "../packages/:/src"
+    entrypoint: bash
