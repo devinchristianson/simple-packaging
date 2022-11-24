@@ -35,10 +35,9 @@ resources:
       secret_access_key: ((s3-mdics-repo.secret-key)) # Optional
       bucket: pkg.mdics.me
       aws_options: ["--endpoint-url https://s3.us-east-2.wasabisys.com"]
-      options:
-        - "--follow-symlinks"
 jobs:
   - name: build-packages
+    serial_groups: [ pacman ]
     plan:
       - get: simple-packaging
         trigger: true
@@ -86,6 +85,15 @@ jobs:
       - put: pacman-pkg-hello-sig
         params:
           file: output/hello-world-*-any.pkg.tar.zst.sig
+      - get: pacman-index
+        params:
+          prefix: pacman 
+          options:
+          - "--exclude '*'"
+          - "--include 'mdicsme.db'"
+          - "--include 'mdicsme.files'"
+          - "--include 'mdicsme.*.tar.gz'"
+          - "--include 'mdicsme.*.tar.gz.sig'"
       - task: rebuild-index-for-pacman-hello
         config:
           platform: linux
@@ -95,19 +103,26 @@ jobs:
             source: {repository: devinchristianson/fpm, tag: archlinux-latest}
           inputs:
           - name: output
+          - name: pacman-index
           outputs: 
-          - name: repo
+          - name: pacman-index
           run:
             path: /gpg-init.sh
             args: ["repo-add", "--verify", "--sign", "-n",
               "mdicsme.db.tar.gz", "../output/hello-world-0.1.0-1-any.pkg.tar.zst"]
-            dir: repo
+            dir: pacman-index
           params:
               GPG_PRIVATE_KEY: ((gpg.private-key))
               GPG_KEY_ID: ((gpg.key-id))
       - put: pacman-index
         params:
           prefix: pacman
-          source_dir: repo 
+          source_dir: pacman-index 
+          options:
+          - "--exclude '*'"
+          - "--include 'mdicsme.db'"
+          - "--include 'mdicsme.files'"
+          - "--include 'mdicsme.*.tar.gz'"
+          - "--include 'mdicsme.*.tar.gz.sig'"
           
         
