@@ -8,7 +8,7 @@ local packages_defs = [
         url: "https://github.com/devinchristianson/simple-packaging",
         description: "Simple hello world program",
         file_mappings: [
-            "simple-packaging/packages/hello-world/pkg/hello=/usr/bin/hello-world"
+            "simple-packaging/packages/hello-world/hello=/usr/bin/hello-world"
         ],
         resources: [
             {
