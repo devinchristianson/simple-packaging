@@ -1,8 +1,34 @@
 services:
   archlinux:
+    image: devinchristianson/fpm:archlinux-latest
     build:
       context: .
-      dockerfile: archlinux/Dockerfile
+      dockerfile: fpm-archlinux/Dockerfile
+      args:
+        VERSION: latest
     volumes:
-      - "../packages/:/src"
+      - "../:/src/simple-packaging"
+      - "/dev/urandom:/dev/urandom"
+    entrypoint: bash
+  fedora:
+    image: devinchristianson/fpm:fedora-37
+    build:
+      context: .
+      dockerfile: fpm-fedora/Dockerfile
+      args:
+        VERSION: "37"
+    volumes:
+      - "../:/src/simple-packaging"
+      - "/dev/urandom:/dev/urandom"
+    entrypoint: bash
+  debian:
+    image: devinchristianson/fpm:debian-stable-latest
+    build:
+      context: .
+      dockerfile: fpm-debian/Dockerfile
+      args:
+        VERSION: "stable-slim"
+    volumes:
+      - "../:/src/simple-packaging"
+      - "/dev/urandom:/dev/urandom"
     entrypoint: bash

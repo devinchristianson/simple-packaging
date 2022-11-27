@@ -10,3 +10,19 @@ The goal of this project is to perform simple automated packaging of existing pr
 
 - also build fpm images with CI?
 - write script to determine new releases with github api https://api.github.com/repos/jgm/pandoc/releases/latest
+
+# Things to package
+- jq
+
+
+
+ideas for index generations
+
+deb:
+- 
+
+
+pacman todo
+- add check for package in index before running build
+
+

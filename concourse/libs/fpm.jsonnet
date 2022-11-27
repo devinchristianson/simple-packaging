@@ -1,25 +1,39 @@
 local generic_packager = import 'pkg.jsonnet';
+local task = import 'task.jsonnet';
+local image = import 'image.jsonnet';
+local step = import 'step.jsonnet';
 {
-    task(pkg, type, architecture):: {
-        local packager = generic_packager(type),
-        "task": "build-" + type + "-" + pkg.name,
-        "config": {
-            "platform": "linux",
-            "image_resource": packager.image,
-            "inputs": [
-                {
-                    "name": resource.name,
-                }
+    //this saves the version to the 
+    saveVersion(version, resources):: 
+            step.task({
+                name: "save-version",
+                image: image("alpine"),
+                //
+                inputs: [resource.name for resource in resources ],
+                outputs: ["version"],
+                arguments: "echo " + version + " > version/version",
+                in_shell: true
+            }),
+    task(pkg, type):: 
+        local depends = if std.objectHas(pkg, 'depends') then
+                        [
+                            "--depends",
+                            pkg.depends
+                        ]
+                        else 
+                            []
+                        ;
+        step.task({
+            name: "package-" + type + "-" + pkg.name,
+            inputs: [
+                resource.name
                 for resource in pkg.resources
-            ],
-            "outputs": [
-                {
-                    "name": "output"
-                }
-            ],
-            "run": {
-                "path": "fpm",
-                "args": [
+            ] + [ "version" ],
+            outputs: ["packaged"],
+            image: generic_packager().image(type),
+            in_shell: true,
+            arguments: [
+                    "fpm",
                     "-t",
                     type,
                     "-s",
@@ -27,18 +41,19 @@ local generic_packager = import 'pkg.jsonnet';
                     "--name",
                     pkg.name,
                     "--version",
-                    pkg.version,
+                    "$(cat version/version)",
                     "--architecture",
-                    architecture,
-                    "--depends",
-                    pkg.depends,
+                    "native",
                     "--description",
-                    pkg.description,
+                    std.escapeStringBash(pkg.description),
+                    "--license",
+                    std.escapeStringBash(pkg.license),
+                    "--url",
+                     std.escapeStringBash(pkg.url),
+                    "--vendor",
+                    std.escapeStringBash("Built by github.com/devinchristianson/simple-packaging"),
                     "-p",
-                    "../../../output/",   
-                ] + pkg.file_mappings,
-                "dir": "simple-packaging/packages/" + pkg.name
-            }
-        }
-    },
+                    "packaged/",   
+                ] + depends + pkg.file_mappings
+        }) 
 }   
