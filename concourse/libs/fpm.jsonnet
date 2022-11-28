@@ -1,5 +1,4 @@
-local generic_packager = import 'pkg.jsonnet';
-local task = import 'task.jsonnet';
+local generic_packager = import 'pkg_types/generic.jsonnet';
 local image = import 'image.jsonnet';
 local step = import 'step.jsonnet';
 {
@@ -27,10 +26,10 @@ local step = import 'step.jsonnet';
             name: "package-" + type + "-" + pkg.name,
             inputs: [
                 resource.name
-                for resource in pkg.resources
+                for resource in pkg.build_resources
             ] + [ "version" ],
             outputs: ["packaged"],
-            image: generic_packager().image(type),
+            image: generic_packager.image(type),
             in_shell: true,
             arguments: [
                     "fpm",

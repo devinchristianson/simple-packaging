@@ -1,5 +1,5 @@
 # package definitions to convert github releases or other resources into packages available at pkg.mdics.me
-local packages_defs = [
+local package_defs = [
     {
         name: "hello-world",
         version: "0.1.0", # required, can be a command that evaluates the version based on the various inputs
@@ -10,7 +10,7 @@ local packages_defs = [
         file_mappings: [
             "simple-packaging/packages/hello-world/hello=/usr/bin/hello-world"
         ],
-        resources: [
+        build_resources: [
             {
                 "name": "simple-packaging",
                 "type": "git",
@@ -37,7 +37,7 @@ local packages_defs = [
         file_mappings: [
             "yq-release/yq_linux_amd64=/usr/bin/yq"
         ],
-        resources: [
+        build_resources: [
             {
                 "name": "yq-release",
                 "type": "github-release",
@@ -84,44 +84,46 @@ local packages_defs = [
 ];
 ####### now to actually generate the concourse pipeline
 local resources = import 'libs/resources.jsonnet';
-local packager = import 'libs/pkg.jsonnet';
-local image = import 'libs/image.jsonnet';
+local packager_fcn = import 'libs/packager.jsonnet';
+local generic = import 'libs/pkg_types/generic.jsonnet';
+local packager = packager_fcn(package_defs);
 {
-    local packages = [
-        packager(type, pkg),    #generate packages per-type-per-package
-        for pkg in packages_defs
-        for type in packager().implementations
-    ],
     resource_types: [
         {
             "name": "simple-s3",
-            "type": "docker-image",
+            "type": "registry-image",
             "source": {
                 "repository": "troykinsella/s3-resource-simple"
+            }
+        },
+        {
+            "name": "key-value",
+            "type": "registry-image",
+            "source": {
+                "repository": "ghcr.io/cludden/concourse-keyval-resource"
             }
         }
     ],
     resources: [
         resources.simple_s3("index", "pkg.mdics.me"),
-    ] + std.flattenArrays([ # pull in resources required per-package-job
-        pkg.resources,
-        for pkg in packages
-    ] + [                   # pull in shared resources per-package 
-        pkg.resources,
-        for pkg in packages_defs
-    ] + [ packager().images ],   #pull in image resources per-type, using the generic packager
-    ),
-    jobs: [
-        pkg.job,
-        for pkg in packages
-    ],
+    ] + packager.resources,
+    jobs: packager.jobs,
     groups: [
         {
             name: pkg.name,
             jobs: [
                 "package-*-" + pkg.name
             ]
+        },
+        for pkg in package_defs
+    ] + [
+        {
+            name: type,
+            jobs: [
+                type + "-*",
+                "package-" + type + "-*"
+            ]
         }
-        for pkg in packages_defs
+        for type in generic.types
     ]
 }
