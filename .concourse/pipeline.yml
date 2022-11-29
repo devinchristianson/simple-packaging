@@ -1,128 +1,863 @@
----
-resource_types:
-- name: s3-bucket
-  type: docker-image
-  source:
-    repository: troykinsella/s3-resource-simple
-
-resources:
-  - name: simple-packaging
-    type: git
-    source:
-      uri: https://github.com/devinchristianson/simple-packaging.git
-      branch: main
-
-  - name: pacman-pkg-hello
-    type: s3
-    source:
-      regexp: pacman/hello-world-(.*)-any.pkg.tar.zst
-      bucket: pkg.mdics.me
-      endpoint: s3.us-east-2.wasabisys.com
-      access_key_id: ((s3-mdics-repo.access-key))
-      secret_access_key: ((s3-mdics-repo.secret-key))
-  - name: pacman-pkg-hello-sig
-    type: s3
-    source:
-      regexp: pacman/hello-world-(.*)-any.pkg.tar.zst
-      bucket: pkg.mdics.me
-      endpoint: s3.us-east-2.wasabisys.com
-      access_key_id: ((s3-mdics-repo.access-key))
-      secret_access_key: ((s3-mdics-repo.secret-key))
-  - name: pacman-index
-    type: s3-bucket
-    source:
-      access_key_id: ((s3-mdics-repo.access-key)) # Optional
-      secret_access_key: ((s3-mdics-repo.secret-key)) # Optional
-      bucket: pkg.mdics.me
-      aws_options: ["--endpoint-url https://s3.us-east-2.wasabisys.com"]
 jobs:
-  - name: build-packages
-    serial_groups: [ pacman ]
+  - name: package-pacman-hello-world
     plan:
-      - get: simple-packaging
-        trigger: true
-      - task: build-pacman-hello
-        config:
-          platform: linux
+      - in_parallel:
+          - get: simple-packaging
+            trigger: true
+          - get: devinchristianson-fpm_archlinux-latest
+      - config:
           image_resource:
-            name: 
-            type: docker-image
-            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
           inputs:
-          - name: simple-packaging
-          outputs: 
-          - name: output
+            - name: simple-packaging
+          outputs:
+            - name: version
+          platform: linux
           run:
+            args:
+              - -exc
+              - echo 0.1.0 | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: simple-packaging
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - pacman
+              - -s
+              - dir
+              - --name
+              - hello-world
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''Simple hello world program'''
+              - --license
+              - '''MIT'''
+              - --url
+              - '''https://github.com/devinchristianson/simple-packaging'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - --depends
+              - bash
+              - simple-packaging/packages/hello-world/hello=/usr/bin/hello-world
             path: fpm
-            args: ["-t", "pacman", "-s", "dir","--name", "hello-world",
-              "--version", "0.1.0","--architecture", "all","--depends", "bash",
-              "--description", "'Says hi!'", "-p", "../../../output/",
-              "pkg/hello=/usr/bin/hello-world"]
-            dir: simple-packaging/packages/hello
-      - task: sign-pacman-hello
-        config:
-          platform: linux
-          image_resource:
-            name: 
-            type: docker-image
-            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
+        image: devinchristianson-fpm_archlinux-latest
+        task: package-pacman-hello-world
+      - config:
           inputs:
-          - name: output
-          outputs: 
-          - name: output
-          run:
-            path: /gpg-init.sh
-            args: ["gpg", "--use-agent",
-              "--output", "hello-world-0.1.0-1-any.pkg.tar.zst.sig",
-              "--detach-sig", "hello-world-0.1.0-1-any.pkg.tar.zst"]
-            dir: output
+            - name: packaged
+          outputs:
+            - name: packaged
           params:
-            GPG_PRIVATE_KEY: ((gpg.private-key))
             GPG_KEY_ID: ((gpg.key-id))
-      - put: pacman-pkg-hello
-        params:
-          file: output/hello-world-*-any.pkg.tar.zst
-      - put: pacman-pkg-hello-sig
-        params:
-          file: output/hello-world-*-any.pkg.tar.zst.sig
-      - get: pacman-index
-        params:
-          prefix: pacman 
-          options:
-          - "--exclude '*'"
-          - "--include 'mdicsme.db'"
-          - "--include 'mdicsme.files'"
-          - "--include 'mdicsme.*.tar.gz'"
-          - "--include 'mdicsme.*.tar.gz.sig'"
-      - task: rebuild-index-for-pacman-hello
-        config:
+            GPG_PRIVATE_KEY: ((gpg.private-key))
           platform: linux
-          image_resource:
-            name: 
-            type: docker-image
-            source: {repository: devinchristianson/fpm, tag: archlinux-latest}
-          inputs:
-          - name: output
-          - name: pacman-index
-          outputs: 
-          - name: pacman-index
           run:
+            args:
+              - gpg
+              - --use-agent
+              - --output
+              - packaged/hello-world-((.:current-version))-1-x86_64.pkg.tar.zst.sig
+              - --detach-sig
+              - packaged/hello-world-((.:current-version))-1-x86_64.pkg.tar.zst
             path: /gpg-init.sh
-            args: ["repo-add", "--verify", "--sign", "-n",
-              "mdicsme.db.tar.gz", "../output/hello-world-0.1.0-1-any.pkg.tar.zst"]
-            dir: pacman-index
+        image: devinchristianson-fpm_archlinux-latest
+        task: sign-pacman-hello-world
+      - in_parallel:
+          - params:
+              file: packaged/hello-world-*-x86_64.pkg.tar.zst
+            put: pacman-pkg-hello-world
+          - params:
+              file: packaged/hello-world-*-x86_64.pkg.tar.zst.sig
+            put: pacman-pkg-hello-world-sig
+      - get: pacman-needs-indexing
+      - params:
+          mapping: |
+            root = file("pacman-needs-indexing/version.json").parse_json()
+            root."hello-world" = "false"
+        put: pacman-needs-indexing
+    serial_groups:
+      - pacman-reindex
+  - name: package-rpm-hello-world
+    plan:
+      - in_parallel:
+          - get: simple-packaging
+            trigger: true
+          - get: devinchristianson-fpm_rockylinux-8
+      - config:
+          image_resource:
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
+          inputs:
+            - name: simple-packaging
+          outputs:
+            - name: version
+          platform: linux
+          run:
+            args:
+              - -exc
+              - echo 0.1.0 | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: simple-packaging
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - rpm
+              - -s
+              - dir
+              - --name
+              - hello-world
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''Simple hello world program'''
+              - --license
+              - '''MIT'''
+              - --url
+              - '''https://github.com/devinchristianson/simple-packaging'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - --depends
+              - bash
+              - simple-packaging/packages/hello-world/hello=/usr/bin/hello-world
+            path: fpm
+        image: devinchristianson-fpm_rockylinux-8
+        task: package-rpm-hello-world
+      - config:
+          inputs:
+            - name: packaged
+          outputs:
+            - name: packaged
           params:
-              GPG_PRIVATE_KEY: ((gpg.private-key))
-              GPG_KEY_ID: ((gpg.key-id))
-      - put: pacman-index
-        params:
-          prefix: pacman
-          source_dir: pacman-index 
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - rpm
+              - --addsign
+              - packaged/hello-world-((.:current-version))-1.x86_64.rpm
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_rockylinux-8
+        task: sign-rpm-hello-world
+      - params:
+          file: packaged/hello-world-*.x86_64.rpm
+        put: rpm-pkg-hello-world
+      - get: rpm-needs-indexing
+      - params:
+          mapping: |
+            root = file("rpm-needs-indexing/version.json").parse_json()
+            root."hello-world" = "false"
+        put: rpm-needs-indexing
+    serial_groups:
+      - rpm-reindex
+  - name: package-pacman-yq
+    plan:
+      - in_parallel:
+          - get: yq-release
+            params:
+              globs:
+                - yq_linux_amd64
+            trigger: true
+          - get: devinchristianson-fpm_archlinux-latest
+      - config:
+          image_resource:
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
+          inputs:
+            - name: yq-release
+          outputs:
+            - name: version
+          platform: linux
+          run:
+            args:
+              - -exc
+              - echo $(cat yq-release/tag) | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: yq-release
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - pacman
+              - -s
+              - dir
+              - --name
+              - yq
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''yq is a portable command-line YAML, JSON, XML, CSV and properties processor'''
+              - --license
+              - '''Apache 2.0'''
+              - --url
+              - '''https://github.com/mikefarah/yq'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - yq-release/yq_linux_amd64=/usr/bin/yq
+            path: fpm
+        image: devinchristianson-fpm_archlinux-latest
+        task: package-pacman-yq
+      - config:
+          inputs:
+            - name: packaged
+          outputs:
+            - name: packaged
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - gpg
+              - --use-agent
+              - --output
+              - packaged/yq-((.:current-version))-1-x86_64.pkg.tar.zst.sig
+              - --detach-sig
+              - packaged/yq-((.:current-version))-1-x86_64.pkg.tar.zst
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_archlinux-latest
+        task: sign-pacman-yq
+      - in_parallel:
+          - params:
+              file: packaged/yq-*-x86_64.pkg.tar.zst
+            put: pacman-pkg-yq
+          - params:
+              file: packaged/yq-*-x86_64.pkg.tar.zst.sig
+            put: pacman-pkg-yq-sig
+      - get: pacman-needs-indexing
+      - params:
+          mapping: |
+            root = file("pacman-needs-indexing/version.json").parse_json()
+            root."yq" = "false"
+        put: pacman-needs-indexing
+    serial_groups:
+      - pacman-reindex
+  - name: package-rpm-yq
+    plan:
+      - in_parallel:
+          - get: yq-release
+            params:
+              globs:
+                - yq_linux_amd64
+            trigger: true
+          - get: devinchristianson-fpm_rockylinux-8
+      - config:
+          image_resource:
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
+          inputs:
+            - name: yq-release
+          outputs:
+            - name: version
+          platform: linux
+          run:
+            args:
+              - -exc
+              - echo $(cat yq-release/tag) | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: yq-release
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - rpm
+              - -s
+              - dir
+              - --name
+              - yq
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''yq is a portable command-line YAML, JSON, XML, CSV and properties processor'''
+              - --license
+              - '''Apache 2.0'''
+              - --url
+              - '''https://github.com/mikefarah/yq'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - yq-release/yq_linux_amd64=/usr/bin/yq
+            path: fpm
+        image: devinchristianson-fpm_rockylinux-8
+        task: package-rpm-yq
+      - config:
+          inputs:
+            - name: packaged
+          outputs:
+            - name: packaged
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - rpm
+              - --addsign
+              - packaged/yq-((.:current-version))-1.x86_64.rpm
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_rockylinux-8
+        task: sign-rpm-yq
+      - params:
+          file: packaged/yq-*.x86_64.rpm
+        put: rpm-pkg-yq
+      - get: rpm-needs-indexing
+      - params:
+          mapping: |
+            root = file("rpm-needs-indexing/version.json").parse_json()
+            root."yq" = "false"
+        put: rpm-needs-indexing
+    serial_groups:
+      - rpm-reindex
+  - name: package-pacman-jq
+    plan:
+      - in_parallel:
+          - get: jq-release
+            params:
+              globs:
+                - jq-linux64
+            trigger: true
+          - get: devinchristianson-fpm_archlinux-latest
+      - config:
+          image_resource:
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
+          inputs:
+            - name: jq-release
+          outputs:
+            - name: version
+          platform: linux
+          run:
+            args:
+              - -exc
+              - echo $(cat jq-release/tag) | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: jq-release
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - pacman
+              - -s
+              - dir
+              - --name
+              - jq
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''Simple hello world program'''
+              - --license
+              - '''Custom'''
+              - --url
+              - '''https://github.com/stedolan/jq'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - jq-release/jq-linux64=/usr/bin/jq
+            path: fpm
+        image: devinchristianson-fpm_archlinux-latest
+        task: package-pacman-jq
+      - config:
+          inputs:
+            - name: packaged
+          outputs:
+            - name: packaged
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - gpg
+              - --use-agent
+              - --output
+              - packaged/jq-((.:current-version))-1-x86_64.pkg.tar.zst.sig
+              - --detach-sig
+              - packaged/jq-((.:current-version))-1-x86_64.pkg.tar.zst
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_archlinux-latest
+        task: sign-pacman-jq
+      - in_parallel:
+          - params:
+              file: packaged/jq-*-x86_64.pkg.tar.zst
+            put: pacman-pkg-jq
+          - params:
+              file: packaged/jq-*-x86_64.pkg.tar.zst.sig
+            put: pacman-pkg-jq-sig
+      - get: pacman-needs-indexing
+      - params:
+          mapping: |
+            root = file("pacman-needs-indexing/version.json").parse_json()
+            root."jq" = "false"
+        put: pacman-needs-indexing
+    serial_groups:
+      - pacman-reindex
+  - name: package-rpm-jq
+    plan:
+      - in_parallel:
+          - get: jq-release
+            params:
+              globs:
+                - jq-linux64
+            trigger: true
+          - get: devinchristianson-fpm_rockylinux-8
+      - config:
+          image_resource:
+            name: alpine
+            source:
+              repository: alpine
+            type: registry-image
+          inputs:
+            - name: jq-release
+          outputs:
+            - name: version
+          platform: linux
+          run:
+            args:
+              - -exc
+              - echo $(cat jq-release/tag) | sed -r 's/[-]+/_/g' > version/version
+            path: sh
+        task: save-version
+      - file: version/version
+        load_var: current-version
+      - config:
+          inputs:
+            - name: jq-release
+          outputs:
+            - name: packaged
+          platform: linux
+          run:
+            args:
+              - -t
+              - rpm
+              - -s
+              - dir
+              - --name
+              - jq
+              - --version
+              - ((.:current-version))
+              - --architecture
+              - native
+              - --description
+              - '''Simple hello world program'''
+              - --license
+              - '''Custom'''
+              - --url
+              - '''https://github.com/stedolan/jq'''
+              - --vendor
+              - '''Built by github.com/devinchristianson/simple-packaging'''
+              - -p
+              - packaged/
+              - jq-release/jq-linux64=/usr/bin/jq
+            path: fpm
+        image: devinchristianson-fpm_rockylinux-8
+        task: package-rpm-jq
+      - config:
+          inputs:
+            - name: packaged
+          outputs:
+            - name: packaged
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - rpm
+              - --addsign
+              - packaged/jq-((.:current-version))-1.x86_64.rpm
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_rockylinux-8
+        task: sign-rpm-jq
+      - params:
+          file: packaged/jq-*.x86_64.rpm
+        put: rpm-pkg-jq
+      - get: rpm-needs-indexing
+      - params:
+          mapping: |
+            root = file("rpm-needs-indexing/version.json").parse_json()
+            root."jq" = "false"
+        put: rpm-needs-indexing
+    serial_groups:
+      - rpm-reindex
+  - name: pacman-reindex
+    plan:
+      - get: pacman-needs-indexing
+      - file: pacman-needs-indexing/version.json
+        load_var: needs-indexing
+      - in_parallel:
+          - get: index
+            params:
+              options:
+                - --exclude '*'
+                - --include 'mdicsme.db'
+                - --include 'mdicsme.files'
+                - --include 'mdicsme.*.tar.gz'
+                - --include 'mdicsme.*.tar.gz.sig'
+              prefix: pacman
+              source_dir: index
+          - get: devinchristianson-fpm_archlinux-latest
+          - get: pacman-pkg-hello-world
+            params:
+              skip_download: ((.:needs-indexing.hello-world))
+            passed:
+              - package-pacman-hello-world
+            trigger: true
+          - get: pacman-pkg-yq
+            params:
+              skip_download: ((.:needs-indexing.yq))
+            passed:
+              - package-pacman-yq
+            trigger: true
+          - get: pacman-pkg-jq
+            params:
+              skip_download: ((.:needs-indexing.jq))
+            passed:
+              - package-pacman-jq
+            trigger: true
+      - config:
+          inputs:
+            - name: index
+            - name: pacman-pkg-hello-world
+            - name: pacman-pkg-yq
+            - name: pacman-pkg-jq
+          outputs:
+            - name: index
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - repo-add
+              - --verify
+              - --sign
+              - -n
+              - index/mdicsme.db.tar.gz
+              - pacman-pkg-hello-world/*.pkg.tar.zst
+              - pacman-pkg-yq/*.pkg.tar.zst
+              - pacman-pkg-jq/*.pkg.tar.zst
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_archlinux-latest
+        task: rebuild-paman-index
+      - get_params:
           options:
-          - "--exclude '*'"
-          - "--include 'mdicsme.db'"
-          - "--include 'mdicsme.files'"
-          - "--include 'mdicsme.*.tar.gz'"
-          - "--include 'mdicsme.*.tar.gz.sig'"
-          
-        
+            - --exclude '*'
+            - --include 'mdicsme.db'
+            - --include 'mdicsme.files'
+            - --include 'mdicsme.*.tar.gz'
+            - --include 'mdicsme.*.tar.gz.sig'
+          prefix: pacman
+          source_dir: index
+        params:
+          options:
+            - --exclude '*'
+            - --include 'mdicsme.db'
+            - --include 'mdicsme.files'
+            - --include 'mdicsme.*.tar.gz'
+            - --include 'mdicsme.*.tar.gz.sig'
+          prefix: pacman
+          source_dir: index
+        put: index
+      - params:
+          mapping: |
+            root = file("pacman-needs-indexing/version.json").parse_json()
+            map thing {
+                root = "true"
+            }
+            root = root.map_each(raw -> raw.apply("thing"))
+        put: pacman-needs-indexing
+    serial: true
+    serial_groups:
+      - pacman-reindex
+  - name: rpm-reindex
+    plan:
+      - get: rpm-needs-indexing
+      - file: rpm-needs-indexing/version.json
+        load_var: needs-indexing
+      - in_parallel:
+          - get: index
+            params:
+              options:
+                - --exclude '*'
+                - --include 'repodata/*'
+                - --include 'cache/*'
+              prefix: rpm
+              source_dir: index
+          - get: devinchristianson-fpm_rockylinux-8
+          - get: rpm-pkg-hello-world
+            params:
+              skip_download: ((.:needs-indexing.hello-world))
+            passed:
+              - package-rpm-hello-world
+            trigger: true
+          - get: rpm-pkg-yq
+            params:
+              skip_download: ((.:needs-indexing.yq))
+            passed:
+              - package-rpm-yq
+            trigger: true
+          - get: rpm-pkg-jq
+            params:
+              skip_download: ((.:needs-indexing.jq))
+            passed:
+              - package-rpm-jq
+            trigger: true
+      - config:
+          inputs:
+            - name: index
+            - name: rpm-pkg-hello-world
+            - name: rpm-pkg-yq
+            - name: rpm-pkg-jq
+          outputs:
+            - name: index
+          platform: linux
+          run:
+            args:
+              - -exc
+              - createrepo --update --cachedir cache -o index --includepkg rpm-pkg-hello-world/*.rpm --includepkg rpm-pkg-yq/*.rpm --includepkg rpm-pkg-jq/*.rpm .
+            path: sh
+        image: devinchristianson-fpm_rockylinux-8
+        task: rebuild-rpm-index
+      - config:
+          inputs:
+            - name: index
+            - name: rpm-pkg-hello-world
+            - name: rpm-pkg-yq
+            - name: rpm-pkg-jq
+          outputs:
+            - name: index
+          params:
+            GPG_KEY_ID: ((gpg.key-id))
+            GPG_PRIVATE_KEY: ((gpg.private-key))
+          platform: linux
+          run:
+            args:
+              - gpg
+              - --yes
+              - --detach-sign
+              - --armor
+              - index/repodata/repomd.xml
+            path: /gpg-init.sh
+        image: devinchristianson-fpm_rockylinux-8
+        task: resign-rpm-index
+      - get_params:
+          options:
+            - --exclude '*'
+            - --include 'repodata/*'
+            - --include 'cache/*'
+          prefix: rpm
+          source_dir: index
+        params:
+          options:
+            - --exclude '*'
+            - --include 'repodata/*'
+            - --include 'cache/*'
+          prefix: rpm
+          source_dir: index
+        put: index
+      - params:
+          mapping: |
+            root = file("rpm-needs-indexing/version.json").parse_json()
+            map thing {
+                root = "true"
+            }
+            root = root.map_each(raw -> raw.apply("thing"))
+        put: rpm-needs-indexing
+    serial: true
+    serial_groups:
+      - rpm-reindex
+resource_types:
+  - name: simple-s3
+    source:
+      repository: troykinsella/s3-resource-simple
+    type: registry-image
+  - name: key-value
+    source:
+      repository: ghcr.io/cludden/concourse-keyval-resource
+    type: registry-image
+resources:
+  - name: index
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      aws_options:
+        - --endpoint-url https://s3.us-east-2.wasabisys.com/
+      bucket: pkg.mdics.me
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: simple-s3
+  - name: pacman-pkg-hello-world
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/hello-world-(.*)-x86_64.pkg.tar.zst
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: pacman-pkg-hello-world-sig
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/hello-world-(.*)-x86_64.pkg.tar.zst.sig
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: rpm-pkg-hello-world
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: rpm/hello-world-(.*).x86_64.rpm
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: pacman-pkg-yq
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/yq-(.*)-x86_64.pkg.tar.zst
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: pacman-pkg-yq-sig
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/yq-(.*)-x86_64.pkg.tar.zst.sig
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: rpm-pkg-yq
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: rpm/yq-(.*).x86_64.rpm
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: pacman-pkg-jq
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/jq-(.*)-x86_64.pkg.tar.zst
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: pacman-pkg-jq-sig
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: pacman/jq-(.*)-x86_64.pkg.tar.zst.sig
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: rpm-pkg-jq
+    source:
+      access_key_id: ((s3-mdics-repo.access-key))
+      bucket: pkg.mdics.me
+      endpoint: s3.us-east-2.wasabisys.com
+      regexp: rpm/jq-(.*).x86_64.rpm
+      secret_access_key: ((s3-mdics-repo.secret-key))
+    type: s3
+  - name: simple-packaging
+    source:
+      branch: main
+      paths:
+        - packages/hello-world/*
+      private_key: ((github.private_key))
+      uri: https://github.com/devinchristianson/simple-packaging.git
+    type: git
+  - name: yq-release
+    source:
+      access_token: ((github.access_key))
+      owner: mikefarah
+      repository: yq
+    type: github-release
+  - name: jq-release
+    source:
+      access_token: ((github.access_key))
+      owner: stedolan
+      repository: jq
+    type: github-release
+  - name: pacman-needs-indexing
+    source:
+      initial_mapping: test = "false"
+    type: key-value
+  - name: rpm-needs-indexing
+    source:
+      initial_mapping: test = "false"
+    type: key-value
+  - name: devinchristianson-fpm_archlinux-latest
+    source:
+      repository: devinchristianson/fpm
+      tag: archlinux-latest
+    type: registry-image
+  - name: devinchristianson-fpm_rockylinux-8
+    source:
+      repository: devinchristianson/fpm
+      tag: rockylinux-8
+    type: registry-image

@@ -54,33 +54,33 @@ local package_defs = [
             }
         ]
     },
-//    {
-//        name: "jq",
-//        #version can be a command that evaluates the version based on the various inputs
-//        version: "$(cat jq-release/tag)",
-//        license: "Custom",
-//        url: "https://github.com/stedolan/jq",
-//        description: "Simple hello world program",
-//        file_mappings: [
-//            "yq-release/jq-linux64=/usr/bin/jq"
-//        ],
-//        resources: [
-//            {
-//                "name": "yq-release",
-//                "type": "github-release",
-//                "source": {
-//                    owner: "stedolan",
-//                    repository: "jq",
-//                    access_token: "((github.access_key))"
-//                },
-//                #these fields are hidden as this is eventually rendered as a concourse resource
-//                "trigger":: true,
-//                "params":: {
-//                    globs: ["jq-linux64"]
-//                }
-//            }
-//        ]
-//    }
+    {
+        name: "jq",
+        #version can be a command that evaluates the version based on the various inputs
+        version: "$(cat jq-release/tag)",
+        license: "Custom",
+        url: "https://github.com/stedolan/jq",
+        description: "Simple hello world program",
+        file_mappings: [
+            "jq-release/jq-linux64=/usr/bin/jq"
+        ],
+        build_resources: [
+            {
+                "name": "jq-release",
+                "type": "github-release",
+                "source": {
+                    owner: "stedolan",
+                    repository: "jq",
+                    access_token: "((github.access_key))"
+                },
+                #these fields are hidden as this is eventually rendered as a concourse resource
+                "trigger":: true,
+                "params":: {
+                    globs: ["jq-linux64"]
+                }
+            }
+        ]
+    }
 ];
 ####### now to actually generate the concourse pipeline
 local resources = import 'libs/resources.jsonnet';
@@ -108,22 +108,22 @@ local packager = packager_fcn(package_defs);
         resources.simple_s3("index", "pkg.mdics.me"),
     ] + packager.resources,
     jobs: packager.jobs,
-    groups: [
-        {
-            name: pkg.name,
-            jobs: [
-                "package-*-" + pkg.name
-            ]
-        },
-        for pkg in package_defs
-    ] + [
-        {
-            name: type,
-            jobs: [
-                type + "-*",
-                "package-" + type + "-*"
-            ]
-        }
-        for type in generic.types
-    ]
+#    groups: [
+#        {
+#            name: pkg.name,
+#            jobs: [
+#                "package-*-" + pkg.name
+#            ]
+#        },
+#        for pkg in package_defs
+#    ] + [
+#        {
+#            name: type,
+#            jobs: [
+#                type + "-*",
+#                "package-" + type + "-*"
+#            ]
+#        }
+#        for type in generic.types
+#    ]
 }

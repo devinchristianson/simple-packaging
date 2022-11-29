@@ -2,17 +2,6 @@ local generic_packager = import 'pkg_types/generic.jsonnet';
 local image = import 'image.jsonnet';
 local step = import 'step.jsonnet';
 {
-    //this saves the version to the 
-    saveVersion(version, resources):: 
-            step.task({
-                name: "save-version",
-                image: image("alpine"),
-                //
-                inputs: [resource.name for resource in resources ],
-                outputs: ["version"],
-                arguments: "echo " + version + " > version/version",
-                in_shell: true
-            }),
     task(pkg, type):: 
         local depends = if std.objectHas(pkg, 'depends') then
                         [
@@ -27,10 +16,9 @@ local step = import 'step.jsonnet';
             inputs: [
                 resource.name
                 for resource in pkg.build_resources
-            ] + [ "version" ],
+            ],
             outputs: ["packaged"],
             image: generic_packager.image(type),
-            in_shell: true,
             arguments: [
                     "fpm",
                     "-t",
@@ -40,7 +28,7 @@ local step = import 'step.jsonnet';
                     "--name",
                     pkg.name,
                     "--version",
-                    "$(cat version/version)",
+                    "((.:current-version))",
                     "--architecture",
                     "native",
                     "--description",

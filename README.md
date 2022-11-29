@@ -11,18 +11,19 @@ The goal of this project is to perform simple automated packaging of existing pr
 - also build fpm images with CI?
 - write script to determine new releases with github api https://api.github.com/repos/jgm/pandoc/releases/latest
 
+
+# How to rebuild pipeline (will be done it a pipeline eventually)
+- jsonnet concourse/pipeline.jsonnet | yq --prettyPrint > .concourse/pipeline.yml
+- fly -t main set-pipeline -p simple-pkg-main -c .concourse/pipeline.yml
 # Things to package
 - jq
+- benthos
 
 
-
-ideas for index generations
-
-deb:
-- 
-
-
-pacman todo
-- add check for package in index before running build
+to do
+- set up deb pipeline
+- move rpm index generation to use mkrepo or if that fails 
+  - https://github.com/deb-s3/deb-s3
+  - https://github.com/stackstate-lab/rpm-s3
 
 

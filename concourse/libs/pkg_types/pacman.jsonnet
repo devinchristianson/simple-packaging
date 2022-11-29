@@ -32,21 +32,20 @@ function(pkg=test_pkg) pkg + {
         step.task({
             name: "sign-pacman-" + pkg.name,
             image: generic_packager.image("pacman"),
-            inputs: ["packaged", "version"],
+            inputs: ["packaged"],
             outputs: ["packaged"],
             params: {
                         "GPG_PRIVATE_KEY": "((gpg.private-key))",
                         "GPG_KEY_ID": "((gpg.key-id))"
                     },
-            in_shell: true,
             arguments: [
                         "/gpg-init.sh",
                         "gpg",
                         "--use-agent",
                         "--output",
-                        std.format("packaged/%s-$(cat version/version)-1-x86_64.pkg.tar.zst.sig", [pkg.name]),
+                        std.format("packaged/%s-((.:current-version))-1-x86_64.pkg.tar.zst.sig", [pkg.name]),
                         "--detach-sig",
-                        std.format("packaged/%s-$(cat version/version)-1-x86_64.pkg.tar.zst", [pkg.name])
+                        std.format("packaged/%s-((.:current-version))-1-x86_64.pkg.tar.zst", [pkg.name])
                     ]
         }), step.in_parallel([
             {

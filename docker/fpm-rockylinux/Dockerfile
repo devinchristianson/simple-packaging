@@ -1,9 +1,8 @@
 ARG VERSION=latest
-FROM fedora:${VERSION}
+FROM rockylinux:${VERSION}
 
 RUN echo "===> Installing tools..." \
-    && dnf install -y ruby-devel gcc make rpm-build squashfs-tools \
-    && dnf module -y install python39 \
+    && dnf install -y ruby-devel gcc make rpm-build python39 createrepo rpm-sign \
     && echo "===> Installing fpm, mkrepo..." \
     && gem install fpm \
     && pip3 install mkrepo boto3==1.4.1 univers==30.9.0 \

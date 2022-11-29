@@ -2,7 +2,7 @@ local image = import '../image.jsonnet';
 local step = import '../step.jsonnet';
 local type_to_image_mapping = {
     "pacman": "devinchristianson/fpm:archlinux-latest",
-    "rpm": "devinchristianson/fpm:fedora-37",
+    "rpm": "devinchristianson/fpm:rockylinux-8",
     "deb": "devinchristianson/fpm:debian-stable-latest"
 };
 local implementations = {
@@ -66,7 +66,6 @@ local convert_image(type) = std.strReplace(std.strReplace(type_to_image_mapping[
                         "index",
                     ] + resources,
                     outputs: ["index"],
-                    in_shell: true,
                     params: {
                                 "GPG_PRIVATE_KEY": "((gpg.private-key))",
                                 "GPG_KEY_ID": "((gpg.key-id))"
@@ -89,14 +88,22 @@ local convert_image(type) = std.strReplace(std.strReplace(type_to_image_mapping[
             step.task({
                 name: "rebuild-rpm-index",
                 image: convert_image("rpm"),
-                inputs: ["packaged","version","index"],
+                inputs: [
+                        "index",
+                    ] + resources,
                 outputs: ["index"],
-                arguments: "createrepo --update --cachedir cache -o index packaged"           
+                in_shell: true,
+                arguments: ["createrepo", "--update", "--cachedir", "cache", "-o", "index"] + [
+                                std.format("--includepkg %s/*.rpm", [resource])
+                                for resource in resources
+                            ] + ["."]  
             }),
             step.task({
                 name: "resign-rpm-index",
                 image: convert_image("rpm"),
-                inputs: ["packaged","version","index"],
+                inputs: [
+                        "index",
+                    ] + resources,
                 outputs: ["index"],
                 arguments: "/gpg-init.sh gpg --yes --detach-sign --armor index/repodata/repomd.xml",
                 params: {

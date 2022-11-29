@@ -10,13 +10,13 @@ services:
       - "../:/src/simple-packaging"
       - "/dev/urandom:/dev/urandom"
     entrypoint: bash
-  fedora:
-    image: devinchristianson/fpm:fedora-37
+  rockylinux:
+    image: devinchristianson/fpm:rockylinux-8
     build:
       context: .
-      dockerfile: fpm-fedora/Dockerfile
+      dockerfile: fpm-rockylinux/Dockerfile
       args:
-        VERSION: "37"
+        VERSION: "8"
     volumes:
       - "../:/src/simple-packaging"
       - "/dev/urandom:/dev/urandom"

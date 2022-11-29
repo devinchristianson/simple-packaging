@@ -43,7 +43,20 @@ function (pkg_defs=[])
                                 "get": generic.image(pkg.type)
                             }
                         ]),
-                        fpm.saveVersion(pkg.version, pkg.build_resources),
+                        step.task({
+                            name: "save-version",
+                            image: image("alpine"),
+                            # needs all build resources as we don't know where the version might be
+                            inputs: [resource.name for resource in pkg.build_resources ],
+                            outputs: ["version"],
+                            # saves the version to the version file (interpreting any bash), then replaces illegal chars with underscore
+                            arguments: "echo " + pkg.version + " | sed -r 's/[-]+/_/g' > version/version",
+                            in_shell: true
+                        }),
+                        {
+                        "load_var": "current-version",
+                        "file": "version/version"
+                        },
                         fpm.task(pkg, pkg.type),
                 ] + pkg.finish_build + [
                     {
@@ -61,7 +74,7 @@ function (pkg_defs=[])
                 ]
             },
             for pkg in packages
-        ] + [   //shared per-type re-indexing jobs
+    ] + [   //shared per-type re-indexing jobs
             {
                 local indexName = type + "-needs-indexing",
                 local isType(pkg) = pkg.type == type,
@@ -115,7 +128,7 @@ function (pkg_defs=[])
                             "mapping" : std.format(|||
                                 root = file("%s").parse_json()
                                 map thing {
-                                    root = "false"
+                                    root = "true"
                                 }
                                 root = root.map_each(raw -> raw.apply("thing"))
                             |||, [indexName + "/version.json"]) //configure to skip all versions

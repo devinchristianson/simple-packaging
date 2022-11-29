@@ -31,18 +31,17 @@ function(pkg=test_pkg) pkg + {
         step.task({
                 name: "sign-rpm-" + pkg.name,
                 image: generic_packager.image("rpm"),
-                inputs: ["packaged", "version"],
+                inputs: ["packaged"],
                 outputs: ["packaged"],
                 params: {
                             "GPG_PRIVATE_KEY": "((gpg.private-key))",
                             "GPG_KEY_ID": "((gpg.key-id))"
                         },
-                in_shell: true,
                 arguments: [
                             "/gpg-init.sh",
                             "rpm",
                             "--addsign",
-                            std.format("packaged/%s-$(cat version/version)-1.x86_64.rpm", [pkg.name])
+                            std.format("packaged/%s-((.:current-version))-1.x86_64.rpm", [pkg.name])
                         ]
             }),
             {
